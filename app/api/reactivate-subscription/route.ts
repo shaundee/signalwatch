@@ -3,58 +3,66 @@ import { supabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { stripe } from "@/lib/stripe";
 import type Stripe from "stripe";
+import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 
 export async function POST() {
   try {
     const supa = supabaseServer();
-    const { data: { user }, error: userErr } = await supa.auth.getUser();
-    if (userErr || !user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const { data: { user } } = await supa.auth.getUser();
+    if (!user?.id) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-    const { data: row, error } = await supabaseAdmin
+    const { data: row } = await supabaseAdmin
       .from("stripe_billing")
-      .select("stripe_subscription_id, stripe_customer_id")
+      .select("stripe_customer_id")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!row?.stripe_customer_id) return NextResponse.json({ error: "No Stripe customer found" }, { status: 404 });
 
-    let subscription: Stripe.Subscription | null = null;
-    if (row?.stripe_subscription_id) {
-      subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
-    } else if (row?.stripe_customer_id) {
-      const list = await stripe.subscriptions.list({ customer: row.stripe_customer_id, limit: 1 });
-      subscription = list.data[0] ?? null;
+    const subs = await stripe.subscriptions.list({ customer: row.stripe_customer_id, status: "all", limit: 20 });
+    const target =
+      subs.data.find(s => (s.cancel_at_period_end || !!s.cancel_at) && ["active","trialing","past_due"].includes(s.status))
+      ?? null;
+
+    if (!target) {
+      const activeLike = subs.data.find(s => ["active","trialing"].includes(s.status) && !s.cancel_at_period_end && !s.cancel_at);
+      if (activeLike) return NextResponse.json({ ok: true, already_active: true });
+      return NextResponse.json({ error: "No subscription scheduled to cancel" }, { status: 404 });
     }
-    if (!subscription) return NextResponse.json({ error: "No subscription found" }, { status: 404 });
-    if (subscription.status === "canceled") {
-      return NextResponse.json({ error: "Subscription is fully canceled. Start a new one from Pricing." }, { status: 409 });
-    }
-    if (!subscription.cancel_at_period_end) {
+
+    let updated: Stripe.Subscription;
+    if (target.cancel_at) {
+      // ts-expect-error Stripe accepts null to clear cancel_at
+      updated = await stripe.subscriptions.update(
+        target.id,
+        { cancel_at: null, proration_behavior: "none" },
+        { idempotencyKey: `reactivate-${user.id}-${target.id}-${randomUUID()}` }
+      );
+    } else if (target.cancel_at_period_end) {
+      updated = await stripe.subscriptions.update(
+        target.id,
+        { cancel_at_period_end: false, proration_behavior: "none" },
+        { idempotencyKey: `reactivate-${user.id}-${target.id}-${randomUUID()}` }
+      );
+    } else {
       return NextResponse.json({ ok: true, already_active: true });
     }
 
-    const updated = await stripe.subscriptions.update(
-      subscription.id,
-      { cancel_at_period_end: false, proration_behavior: "none" },
-      { idempotencyKey: `reactivate:${user.id}:${subscription.id}` }
-    );
+    const confirm = await stripe.subscriptions.retrieve(updated.id);
 
     return NextResponse.json({
       ok: true,
-      cancel_at_period_end: updated.cancel_at_period_end,
-      status: updated.status,
+      subscription_id: confirm.id,
+      status: confirm.status,
+      cancel_at_period_end: confirm.cancel_at_period_end,
+      cancel_at: confirm.cancel_at,
     });
   } catch (e: any) {
     console.error("reactivate-subscription error:", e?.message ?? e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
-}
-
-// Optional: keep GET for quick health check
-export async function GET() {
-  return NextResponse.json({ ok: true, route: "reactivate-subscription" });
 }

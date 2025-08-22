@@ -1,16 +1,23 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import ClientProviders from "@/components/ClientProviders";
+import SiteNav from "@/components/SiteNav";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata: Metadata = {
-  title: "VATTrackify Starter",
-  description: "Next.js + Supabase + Stripe + Shopify/HMRC OAuth stubs",
+  title: "VatPilot",
+  description: "Track VAT easily",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
-        <main className="max-w-5xl mx-auto p-6">{children}</main>
+      <body className="bg-zinc-50 text-zinc-900">
+        <ClientProviders>
+          <SiteNav />
+          <main className="min-h-[70vh]">{children}</main>
+          <SiteFooter />
+        </ClientProviders>
       </body>
     </html>
   );

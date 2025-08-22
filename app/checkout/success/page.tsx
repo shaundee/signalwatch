@@ -1,33 +1,52 @@
-"use client";
-import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
-import ManageBillingButton from "@/components/ManageBillingButton";
-import { useToast } from "@/components/ui/ToastProvider";
+import { stripe } from "@/lib/stripe";
+import { supabaseServer } from "@/lib/supabaseServer";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import Link from "next/link";
 
-export default function Success() {
-  const params = useSearchParams();
-  const { success } = useToast();
-  const sessionId = params.get("session_id");
+export const dynamic = "force-dynamic";
 
-  useEffect(() => {
-    success("Payment successful — your subscription is active!");
-  }, [success]);
+export default async function Success({ searchParams }: { searchParams: { session_id?: string } }) {
+  const supa = supabaseServer();
+  const { data: { user } } = await supa.auth.getUser();
+
+  const sessionId = searchParams.session_id;
+  if (user?.id && sessionId) {
+    try {
+      const sess = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
+      const subId = typeof sess.subscription === "string" ? sess.subscription : sess.subscription?.id;
+      if (subId) {
+        const sub = await stripe.subscriptions.retrieve(subId);
+        const item = sub.items.data[0];
+        const price = item?.price;
+        const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+
+        await supabaseAdmin.from("stripe_billing").upsert(
+          {
+            user_id: user.id,
+            email: user.email ?? null,
+            stripe_customer_id: customerId ?? null,
+            stripe_subscription_id: sub.id,
+            status: sub.status,
+            plan: price?.recurring?.interval ?? null,
+            price_id: price?.id ?? null,
+            current_period_end: sub.current_period_end
+              ? new Date(sub.current_period_end * 1000).toISOString()
+              : null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+      }
+    } catch (e) {
+      console.error("success upsert error:", e);
+    }
+  }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-16">
-      <h1 className="text-3xl font-bold tracking-tight">Thanks! 🎉</h1>
-      <p className="mt-2 text-zinc-600">
-        You can manage your plan any time in the Customer Portal.
-      </p>
-      <div className="mt-6">
-        {/* Our ManageBillingButton already reads ?session_id=... as a fallback */}
-        <ManageBillingButton />
-      </div>
-      {!sessionId && (
-        <p className="mt-3 text-xs text-zinc-500">
-          Tip: If you don’t see the portal, start from the Dashboard or Pricing page.
-        </p>
-      )}
+    <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1 className="text-3xl font-bold">Success! 🎉</h1>
+      <p className="mt-2 text-zinc-600">Your subscription was created.</p>
+      <Link href="/dashboard" className="btn mt-6">Go to dashboard</Link>
     </div>
   );
 }
