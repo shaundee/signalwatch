@@ -1,44 +1,55 @@
-import SubscriptionStatus from "@/components/SubscriptionStatus";
-import ManageBillingButton from "@/components/ManageBillingButton";
-import ChangePlanButtons from "@/components/ChangePlanButtons";
-import BillingHistory from "@/components/BillingHistory";
-import ConditionalReactivate from "@/components/ConditionalReactivate";
+// ┌───────────────────────────────────────────────────────────┐
+// │ File: app/dashboard/page.tsx                              │
+// └───────────────────────────────────────────────────────────┘
+"use client";
 
-export const dynamic = "force-dynamic";
+import React from "react";
+import HmrcObligationsTable, { Obligation } from "@/components/ui/HmrcObligationsTable";
+import VatBoxesPreview, { Boxes } from "@/components/ui/VatBoxesPreview";
+import HmrcSubmitControls from "@/components/ui/HmrcSubmitControls";
 
-export default function Dashboard() {
+export default function DashboardPage() {
+  // if you already store these in context/session, you can hydrate them here:
+  const [shopDomain, setShopDomain] = React.useState("");
+  const [vrn, setVrn] = React.useState("");
+
+  const [selected, setSelected] = React.useState<Obligation | null>(null);
+  const [boxes, setBoxes] = React.useState<Boxes | null>(null);
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-      <p className="mt-2 text-zinc-600">Subscription & billing controls.</p>
+    <div className="mx-auto max-w-4xl p-6 space-y-6">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">VAT Dashboard</h1>
+        <span className="text-xs text-gray-500">MTD VAT</span>
+      </header>
 
-      <div className="mt-8 grid gap-6 md:grid-cols-2">
-        <div className="card">
-          <h2 className="text-lg font-semibold">Subscription status</h2>
-          <div className="mt-3"><SubscriptionStatus /></div>
-        </div>
+      {/* connection bar */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-sm font-medium">Shop domain</span>
+          <input
+            className="mt-1 w-full rounded-xl border px-3 py-2"
+            placeholder="example.myshopify.com"
+            value={shopDomain}
+            onChange={(e) => setShopDomain(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium">VAT VRN</span>
+          <input
+            className="mt-1 w-full rounded-xl border px-3 py-2"
+            placeholder="123456789"
+            value={vrn}
+            onChange={(e) => setVrn(e.target.value)}
+          />
+        </label>
+      </section>
 
-        <div className="card">
-          <h2 className="text-lg font-semibold">Billing</h2>
-          <p className="mt-2 text-sm text-zinc-600">Update payment details or cancel/reactivate.</p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <ManageBillingButton />
-            {/* Cancel button intentionally hidden */}
-            <ConditionalReactivate />
-          </div>
-        </div>
+      <HmrcObligationsTable vrn={vrn} selected={selected} onSelect={(o) => { setSelected(o); setBoxes(null); }} />
 
-        <div className="card">
-          <h2 className="text-lg font-semibold">Change plan</h2>
-          <p className="mt-2 text-sm text-zinc-600">Switch monthly ↔ annual (proration applies).</p>
-          <div className="mt-4"><ChangePlanButtons /></div>
-        </div>
+      <VatBoxesPreview shopDomain={shopDomain} obligation={selected} onLoaded={setBoxes} />
 
-        <div className="card md:col-span-2">
-          <h2 className="text-lg font-semibold">Billing history</h2>
-          <div className="mt-3"><BillingHistory /></div>
-        </div>
-      </div>
+      <HmrcSubmitControls shopDomain={shopDomain} vrn={vrn} obligation={selected} boxes={boxes} />
     </div>
   );
 }

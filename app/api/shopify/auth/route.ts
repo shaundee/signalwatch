@@ -1,22 +1,43 @@
+// app/api/shopify/auth/route.ts
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const shop = searchParams.get("shop");
-  if (!shop) {
-    return NextResponse.json({ error: "Missing ?shop=my-shop.myshopify.com" }, { status: 400 });
-  }
+export const runtime = "nodejs";
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const shop = url.searchParams.get("shop");
+  if (!shop) return new NextResponse("Missing shop", { status: 400 });
 
   const state = crypto.randomBytes(16).toString("hex");
-  const redirectUri = `${process.env.SHOPIFY_APP_URL}/api/shopify/callback`;
-  const params = new URLSearchParams({
-    client_id: process.env.SHOPIFY_API_KEY!,
-    scope: process.env.SHOPIFY_SCOPES || "read_products",
-    redirect_uri: redirectUri,
-    state,
+
+  // Build Shopify authorize URL
+  const redirect = new URL(`https://${shop}/admin/oauth/authorize`);
+  redirect.searchParams.set("client_id", process.env.SHOPIFY_API_KEY!);
+  redirect.searchParams.set("scope", process.env.SHOPIFY_SCOPES!);
+  redirect.searchParams.set(
+    "redirect_uri",
+    `${process.env.SHOPIFY_APP_URL}/api/shopify/callback`,
+  );
+  redirect.searchParams.set("state", state);
+
+  // Set cookies ON THE RESPONSE WE RETURN (most reliable)
+  const res = NextResponse.redirect(redirect.toString(), {
+    headers: { "Cache-Control": "no-store" },
   });
-  const authUrl = `https://${shop}/admin/oauth/authorize?${params.toString()}`;
-  // TODO: store `state` in a cookie/session to verify later
-  return NextResponse.redirect(authUrl);
+  res.cookies.set("shopify_oauth_state", state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 5 * 60, // 5 min, optional
+  });
+  res.cookies.set("shopify_oauth_shop", shop, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 5 * 60,
+  });
+  return res;
 }

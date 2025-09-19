@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 
 type Toast = { id: number; msg: string; tone: "info" | "success" | "error" };
 type Ctx = { info: (m: string) => void; success: (m: string) => void; error: (m: string) => void };

@@ -1,4 +1,6 @@
-// app/refund-policy/page.tsx
+// app/refund-policy/page.tsxexport 
+
+ const metadata = { title: "Refund policy — VatPilot" };
 export default function RefundPolicy() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -17,6 +19,12 @@ export default function RefundPolicy() {
           {process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@example.com"}
         </a>.
       </p>
+        <main className="mx-auto max-w-3xl px-6 py-16">
+      <h1 className="text-3xl font-bold">Refund policy</h1>
+      <p className="mt-4 text-zinc-600">
+        Presale deposits are refundable anytime before launch. Annual plan has a 14-day money-back guarantee.
+      </p>
+    </main>
     </div>
   );
 }
