@@ -56,6 +56,11 @@ export default async function Report({ params }: { params: { scanId: string } })
           </p>
           <p className="text-sm mt-1">Health score: <strong>{percent}%</strong></p>
         </div>
+        <div className="mb-4 rounded-xl border p-3 text-sm bg-black/5 dark:bg-white/5">
+  Want Slack alerts & scheduled scans? Join the pilot →
+  <a href="/run-audit" className="underline ml-1">Run a free audit</a>
+</div>
+
         <ReportActions scanId={params.scanId} />
       </div>
 

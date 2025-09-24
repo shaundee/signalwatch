@@ -1,7 +1,8 @@
 {
-  "name": "vattrackify-starter",
+  "name": "signalwatch",
   "private": true,
   "version": "0.1.0",
+  "description": "SignalWatch — website audit & shareable report",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

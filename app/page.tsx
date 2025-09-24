@@ -1,17 +1,28 @@
 // app/page.tsx
+import SubscribeForm from "@/components/SubscribeForm";
+
+
+
 
 export const metadata = {
   title: "SignalWatch — Free Website Audit & Shareable Report",
-  description: "Find issues costing your site traffic & sales. Run a free audit, get a shareable report, export a PDF.",
+  description:
+    "Find issues costing your site traffic & sales. Run a free audit, get a shareable report, export a PDF.",
   metadataBase: new URL(process.env.REPORT_BASE_URL || "http://localhost:3000"),
   openGraph: {
     title: "SignalWatch — Free Website Audit",
-    description: "Run a free audit, share a clean report, and export a PDF.",
+    description:
+      "Run a free audit, share a clean report, and export a PDF.",
     url: "/",
     siteName: "SignalWatch",
-    images: ["/og.png"],
+    images: ["/og.png"], // optional, see note below
   },
-  twitter: { card: "summary_large_image", title: "SignalWatch", description: "Free website audits.", images: ["/og.png"] },
+  twitter: {
+    card: "summary_large_image",
+    title: "SignalWatch",
+    description: "Free website audits.",
+    images: ["/og.png"], // optional
+  },
 };
 
 
@@ -47,7 +58,9 @@ export default function HomePage() {
           <Feature title="Queue status">See queued/running at a glance.</Feature>
           <Feature title="Shareable link">Clean /s/&lt;token&gt; links for clients.</Feature>
           <Feature title="PDF export">One-click PDF for email or Slack.</Feature>
+          <SubscribeForm />
         </div>
+
 
         <p className="mt-8 text-sm opacity-60">
           Made in London · Slack alerts & scheduled scans available in pilot

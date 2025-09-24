@@ -1,10 +1,11 @@
-export const metadata = { title: "Privacy — VatPilot" };
-
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
-      <h1 className="text-3xl font-bold">Privacy Policy</h1>
-      <p className="mt-4 text-zinc-600">Placeholder privacy policy for presale. Update later.</p>
+    <main className="mx-auto max-w-3xl px-6 py-12 prose">
+      <h1>Privacy Policy</h1>
+      <p>SignalWatch processes the URL you submit to run an audit and stores results to show your report and improve service quality.</p>
+      <p>We log IP addresses to prevent abuse. We don’t sell personal data.</p>
+      <p>Contact: support@signalwatch.io</p>
+      <p>Last updated: {new Date().toISOString().slice(0,10)}</p>
     </main>
   );
 }

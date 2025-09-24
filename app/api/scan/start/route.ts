@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
+import { corsHeaders } from "@/lib/cors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,8 +59,7 @@ export async function POST(req: NextRequest) {
         const count = rl?.count ?? 0;
         if (count >= MAX_PER_HOUR) {
           return NextResponse.json(
-            { error: "Too many audits from your IP. Try again in an hour." },
-            { status: 429 }
+            { error: "Too many audits from your IP. Try again in an hour." },{ status: 429, headers: corsHeaders() }
           );
         }
         const { error: upErr } = await supa
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const code =
       e?.message === "https_required" ? 400 :
       e?.message === "invalid_host"   ? 400 : 422;
-    return NextResponse.json({ error: e?.message || "invalid_url" }, { status: code });
+    return NextResponse.json({ error: e?.message || "invalid_url" },{ status: 500, headers: corsHeaders() });
   }
 
   // 4) Ensure domain (idempotent)
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (dErr || !d) {
-    return NextResponse.json({ error: dErr?.message || "ensure domain failed" }, { status: 500 });
+    return NextResponse.json({ error: dErr?.message || "ensure domain failed" },{ status: 500, headers: corsHeaders() });
   }
 
   // 5) Create scan row
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (sErr || !s) {
-    return NextResponse.json({ error: sErr?.message || "create scan failed" }, { status: 500 });
+    return NextResponse.json({ error: sErr?.message || "create scan failed" },{ status: 500, headers: corsHeaders() });
   }
 
   // 6) Reply
@@ -112,5 +112,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     scanId: s.id,
     reportUrl: `${base}/r/${s.id}`,
-  });
+  },{headers: corsHeaders() });
+}
+export async function OPTIONS() {
+  return new Response(null, { headers: corsHeaders() });
 }
