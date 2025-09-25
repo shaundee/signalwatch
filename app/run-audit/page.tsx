@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-
+import { usePeekPoll } from "@/lib/usePeekPoll";
 type StartResp =
   | { scanId: string; reportUrl?: string; report_id?: string }
   | { scanId?: string; error: string; details?: any };
@@ -46,22 +46,32 @@ export default function RunAuditPage() {
     }
   }
 
-  useEffect(() => {
-    let timer: any;
-    async function poll() {
-      try {
-        const res = await fetch("/api/scan/peek", { cache: "no-store" });
-        const j = await res.json();
-        setQueuedCount(typeof j?.queuedCount === "number" ? j.queuedCount : null);
-      } catch {
-        // ignore
-      } finally {
-        timer = setTimeout(poll, 5000);
-      }
-    }
-    poll();
-    return () => clearTimeout(timer);
-  }, []);
+const fetchPeek = async () => {
+  const res = await fetch("/api/scan/peek", { cache: "no-store" });
+
+  // Throttled or empty → nothing to parse
+  if (res.status === 204) return;
+  // Some hosts set 200 with empty body; guard that too.
+  const len = res.headers.get("content-length");
+  if (len === "0") return;
+
+  if (!res.ok) {
+    // optional: surface status in UI
+    // console.warn("peek failed", res.status);
+    return;
+  }
+
+  // Safe parse
+  let j: any = null;
+  try {
+    j = await res.json();
+  } catch {
+    // body not JSON/empty — just skip this tick
+    return;
+  }
+
+  setQueuedCount(typeof j?.queuedCount === "number" ? j.queuedCount : null);
+};
 
 
 

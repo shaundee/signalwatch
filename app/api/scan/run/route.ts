@@ -1,36 +1,62 @@
-// app/api/scan/run/route.ts
+// ┌───────────────────────────────────────────────────────────┐
+// │ File: app/api/scan/run/route.ts                           │
+// └───────────────────────────────────────────────────────────┘
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { runHtmlChecks } from "@/lib/scanner/htmlChecks";
 import { sendSlack } from "@/lib/notify/slack";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function hashText(s: string) {
+  return crypto.createHash("sha256").update(s).digest("hex");
+}
 
 export async function POST() {
+  const supa = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE!
+  );
+
+  // 1) pick the oldest queued scan
+  const { data: q, error: selErr } = await supa
+    .from("scans")
+    .select("id, domain_id, created_at, status")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (selErr) {
+    return NextResponse.json({ error: selErr.message }, { status: 500 });
+  }
+
+  if (!q) {
+    return NextResponse.json({ ok: true, message: "no queued scans" });
+  }
+
+  let domainUrl: string | null = null;
+
   try {
-    const supa = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE!
-    );
-
-    // 1) get the oldest queued scan
-    const { data: q, error: eQ } = await supa
-      .from("scans")
-      .select("id, domain_id")
-      .eq("status", "queued")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (eQ) throw eQ;
-    if (!q) return NextResponse.json({ done: true });
-
-    // 2) get domain url
-    const { data: d, error: eD } = await supa
+    // 2) fetch domain row
+    const { data: d } = await supa
       .from("domains")
-      .select("url")
+      .select("id,url,last_alert_hash,last_alert_at")
       .eq("id", q.domain_id)
       .single();
-    if (eD) throw eD;
+
+    if (!d) {
+      // orphan safeguard → fail scan and exit
+      await supa
+        .from("scans")
+        .update({ status: "failed", finished_at: new Date().toISOString() })
+        .eq("id", q.id);
+      return NextResponse.json({ ok: false, error: "orphan_scan" }, { status: 200 });
+    }
+
+    domainUrl = d.url;
 
     // 3) mark running
     await supa
@@ -41,70 +67,83 @@ export async function POST() {
     // 4) run checks
     const checks = await runHtmlChecks(d.url);
 
-    // 5) write checks
-    const rows = checks.map((c) => ({
+    // 5) write checks (if your system stores them—skip if not needed)
+    // Example table name: scan_checks (you already use this in batch worker)
+    const rows = checks.map((c: any) => ({
       scan_id: q.id,
       name: c.name,
-      status: c.status,
-      details: c.details ?? null,
+      status: c.status,            // 'red' | 'amber' | 'green'
+      details: c.details ?? null,  // jsonb
     }));
-    const { error: eIns } = await supa.from("scan_checks").insert(rows);
-    if (eIns) throw eIns;
-
-    // 6) 🔔 Slack alert (after insert, before finish)
-    const summary = checks.map(c => {
-  const dot = c.status==='red' ? '🔴' : c.status==='amber' ? '🟡' : '🟢';
-  const fix = c.status==='red' && c.details?.fix ? ` — Fix: ${c.details.fix}` : "";
-  return `${dot} ${c.name}${fix}`;
-}).join("\n");
-    const hasRed = checks.some((c) => c.status === "red");
-  
-if (hasRed && process.env.SLACK_WEBHOOK_URL) {
-  const reportUrl = `${process.env.REPORT_BASE_URL}/r/${q.id}`;
-  await sendSlack(`*SignalWatch: RED checks detected*\n• Domain: ${d.url}\n• Report: ${reportUrl}\n\n${summary}`);
+    if (rows.length) {
+      const { error: eIns } = await supa.from("scan_checks").insert(rows);
+      if (eIns) throw eIns;
     }
 
-    // 7) mark finished
+    // 6) summarize + Slack dedupe on content
+    const summary = checks
+      .map((c: any) => {
+        const dot = c.status === "red" ? "🔴" : c.status === "amber" ? "🟡" : "🟢";
+        const fix = c.status === "red" && c.details?.fix ? ` — Fix: ${c.details.fix}` : "";
+        return `${dot} ${c.name}${fix}`;
+      })
+      .join("\n");
+
+    const hasRed = checks.some((c: any) => c.status === "red");
+    const summaryHash = hashText(summary);
+
+    if (hasRed && process.env.SLACK_WEBHOOK_URL && summaryHash !== d.last_alert_hash) {
+      const reportUrl = `${process.env.REPORT_BASE_URL}/r/${q.id}`;
+      const reds = checks.filter((c: any) => c.status === "red").length;
+      const ambers = checks.filter((c: any) => c.status === "amber").length;
+      const greens = checks.filter((c: any) => c.status === "green").length;
+
+      await sendSlack(
+        [
+          `🚨 *SignalWatch* — ${d.url}`,
+          `• Reds: ${reds}  Ambers: ${ambers}  Greens: ${greens}`,
+          `• Report: ${reportUrl}`,
+          "",
+          summary,
+        ].join("\n")
+      );
+
+      await supa
+        .from("domains")
+        .update({
+          last_alert_hash: summaryHash,
+          last_alert_at: new Date().toISOString(),
+        })
+        .eq("id", d.id);
+    }
+
+    // 7) finish scan
     await supa
       .from("scans")
       .update({ status: "finished", finished_at: new Date().toISOString() })
       .eq("id", q.id);
 
- const redNames = checks.filter(c => c.status === "red").map(c => c.name).sort();
-const hash = Buffer.from(redNames.join("|")).toString("base64"); // simple stable hash
-
-// read last alert meta
-const { data: meta } = await supa.from("domains")
-  .select("last_alert_hash,last_alert_at")
-  .eq("id", q.domain_id)
-  .single();
-
-const tooSoon = meta?.last_alert_at && Date.now() - new Date(meta.last_alert_at).getTime() < 60 * 60 * 1000;
-const changed = hash !== meta?.last_alert_hash;
-
-if (redNames.length && changed && !tooSoon && process.env.SLACK_WEBHOOK_URL) {
-  const summary = checks
-    .map(c => `${c.status === "red" ? "🔴" : c.status === "amber" ? "🟡" : "🟢"} ${c.name}`)
-    .join("\n");
-  const reportUrl = `${process.env.REPORT_BASE_URL}/r/${q.id}`;
-  await sendSlack([
-`🚨 *SignalWatch* — ${d.url}`,
-`• Reds: ${redNames.length} • Ambers: ${checks.filter(c=>c.status==='amber').length} • Greens: ${checks.filter(c=>c.status==='green').length}`,
-`• Report: ${reportUrl}`,
-"",
-...checks.map(c => `${c.status==='red'?'🔴':c.status==='amber'?'🟡':'🟢'} ${c.name}`)
-].join("\n"));
-
-
-  await supa.from("domains").update({
-    last_alert_hash: hash,
-    last_alert_at: new Date().toISOString(),
-  }).eq("id", q.domain_id);
-}
-
-    return NextResponse.json({ scanId: q.id, checks: rows.length });
+    return NextResponse.json({ ok: true, scanId: q.id, checks: rows.length });
   } catch (err: any) {
-    console.error("scan/run error:", err?.message ?? err);
+    // mark failed
+    await supa
+      .from("scans")
+      .update({ status: "failed", finished_at: new Date().toISOString() })
+      .eq("id", q.id);
+
+    // 🔔 Slack error (non-blocking)
+    try {
+      if (process.env.SLACK_WEBHOOK_URL) {
+        const msg = [
+          "*SignalWatch: worker error (single run)*",
+          `• Scan: ${q.id}`,
+          `• Domain: ${domainUrl ?? "(unknown)"}`,
+          `• Error: ${err?.message ?? String(err)}`,
+        ].join("\n");
+        await sendSlack(msg);
+      }
+    } catch {}
+
     return NextResponse.json({ error: err?.message ?? "unknown" }, { status: 500 });
   }
 }
