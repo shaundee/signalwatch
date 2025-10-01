@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/alt-text */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

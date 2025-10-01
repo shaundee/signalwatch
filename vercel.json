@@ -1,5 +1,5 @@
 {
   "crons": [
-    { "path": "/api/scan/run-all", "schedule": "*/2 * * * *" }
+    { "path": "/api/scan/run-all", "schedule": "*/5 * * * *", "method": "POST" }
   ]
 }
